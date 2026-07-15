@@ -1,0 +1,9 @@
+
+# Third-party library (hzeller) - not part of this repo
+rpi-rgb-led-matrix/
+
+# Local emulator configuration
+emulator_config.json
+
+# Test files
+test_emulator.py
