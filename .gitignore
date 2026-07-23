@@ -7,3 +7,7 @@ emulator_config.json
 
 # Test files
 test_emulator.py
+
+# Renderer build artifacts
+renderer/obj/
+renderer/renderer
