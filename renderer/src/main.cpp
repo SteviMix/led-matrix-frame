@@ -24,7 +24,8 @@ namespace {
 constexpr const char *kSocketPath = "/tmp/ledframe.sock";
 constexpr int kMatrixRows = 64;
 constexpr int kMatrixCols = 128;
-constexpr int kChainLength = 2;
+constexpr int kChainLength = 1;
+constexpr int kParallel = 2;
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr size_t kFrameBytes = static_cast<size_t>(kWidth) * kHeight * 3;
@@ -71,6 +72,7 @@ int main(int argc, char *argv[]) {
   matrix_options.rows = kMatrixRows;
   matrix_options.cols = kMatrixCols;
   matrix_options.chain_length = kChainLength;
+  matrix_options.parallel = kParallel;
   matrix_options.hardware_mapping = "regular";
 
   rgb_matrix::RuntimeOptions runtime_options;
