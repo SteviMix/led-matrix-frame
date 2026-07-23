@@ -7,3 +7,24 @@ emulator_config.json
 
 # Test files
 test_emulator.py
+
+# Renderer build artifacts
+renderer/obj/
+renderer/renderer
+
+# Node dependencies
+backend/node_modules/
+
+# SQLite database (data, not code)
+backend/db/*.db
+backend/db/*.db-*
+
+# Uploaded/processed image files (data, not code)
+images/original/*
+images/processed/*
+!images/original/.gitkeep
+!images/processed/.gitkeep
+
+# Python bytecode cache
+__pycache__/
+*.pyc
