@@ -14,3 +14,7 @@ renderer/renderer
 
 # Node dependencies
 backend/node_modules/
+
+# SQLite database (data, not code)
+backend/db/*.db
+backend/db/*.db-*
