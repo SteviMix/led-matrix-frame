@@ -24,3 +24,7 @@ images/original/*
 images/processed/*
 !images/original/.gitkeep
 !images/processed/.gitkeep
+
+# Python bytecode cache
+__pycache__/
+*.pyc
