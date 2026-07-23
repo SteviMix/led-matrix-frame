@@ -11,3 +11,6 @@ test_emulator.py
 # Renderer build artifacts
 renderer/obj/
 renderer/renderer
+
+# Node dependencies
+backend/node_modules/
