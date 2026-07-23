@@ -18,3 +18,9 @@ backend/node_modules/
 # SQLite database (data, not code)
 backend/db/*.db
 backend/db/*.db-*
+
+# Uploaded/processed image files (data, not code)
+images/original/*
+images/processed/*
+!images/original/.gitkeep
+!images/processed/.gitkeep
