@@ -166,22 +166,54 @@ no length prefix. Identical across C++, Python, and Node. Pixel (x, y) starts at
 
 ---
 
-## IMMEDIATE NEXT STEPS (Phase 3)
+## Phase 3 part 1 — COMPLETE (mode manager + slideshow)
 
-Phase 3 is the largest phase and is split across branches, one per mode, rather than one large PR:
+Branch `phase-3/slideshow`, not yet merged. Delivered:
 
-1. **`phase-3/slideshow`** — mode manager + playlist CRUD + crop/pan + dithering + slideshow
-2. **`phase-3/live-draw`** — WebSocket canvas, delta pixel protocol, in-memory canvas buffer
-3. **`phase-3/paint-by-number`** — K-means, block-reveal, dual-save (hardest of the three)
+- **Mode manager** (`backend/src/modes/mode-manager.js`) — tracks the active mode
+  (`slideshow`/`draw`/`paint-by-number`/`idle`), enforces that switching always fully stops the
+  previous mode (`await stop()`) before starting the next, persists `current_mode` to
+  `app_state`, and resumes it on backend startup (falling back to `idle` if the stored mode has
+  no implementation registered yet, so an old value can never crash startup).
+- **Slideshow mode** (`backend/src/modes/slideshow.js`) — `setTimeout`-recursion timer (not
+  `setInterval`, so manual `next()`/`previous()` can cleanly reset the schedule), reads the
+  active playlist and interval from `app_state` on every tick (not cached), and handles empty
+  playlist / missing file / disconnected renderer by logging and skipping — never throws, since
+  a timer tick has no request to report an error to.
+- **Playlist CRUD + image assignment** (`backend/src/routes/playlists.js`,
+  extended `routes/images.js`) — `images.playlist_id` changed from `ON DELETE CASCADE` to
+  `ON DELETE SET NULL`: deleting a playlist orphans its images (and never touches files on
+  disk), since an image can exist outside any playlist.
+- **Crop re-processing** (`POST /api/images/:id/crop`) — re-runs `process_image.py` on the
+  original file with a new crop rectangle, overwrites `processed_path` only. `original_path` is
+  never modified.
+- **Floyd–Steinberg dithering** in `process_image.py`, on by default, applied after resize.
 
-**New architectural piece: the mode manager.** Three modes will compete to write to the matrix
-and only one may be active at a time — otherwise a slideshow timer and a drawing session fight
-over the renderer socket. Switching modes must fully stop the previous one (clear timers, release
-resources). A leaked `setInterval` is the most likely bug in this phase and is hard to diagnose,
-because the symptom (frames appearing during another mode) looks unrelated to its cause.
+**Bug caught during manual testing, not by review:** the first version of backend shutdown
+called `modeManager.switchMode("idle")` to stop timers cleanly on SIGINT — which also persisted
+`current_mode = 'idle'` to `app_state`, silently defeating the resume-on-restart feature every
+single time the backend shut down normally. Fixed by adding a separate `modeManager.shutdown()`
+that stops the current instance without persisting a mode change. Caught by actually restarting
+the backend and checking `/api/status`, not by reading the code.
 
-**Order rationale:** slideshow is closest to what already works (send an image to the renderer),
-so it extends proven ground. Paint-by-number is hardest and goes last.
+**Performance note:** the first Floyd–Steinberg implementation used numpy scalar indexing
+(`img[y, x]`) in the pixel loop and took ~1.5s for a 128x128 image — each numpy element access
+carries array-object overhead that a plain Python list lookup doesn't. Converting to
+`.tolist()` and working in plain Python lists dropped this to ~0.17s (about 9x).
+
+**Renderer logging bug found in passing (Phase 2 code):** `renderer_emulator.py`'s status
+`print()` calls had no `flush=True`, so they sat in Python's stdout buffer indefinitely
+whenever stdout wasn't a TTY (i.e. always, in this project's `nohup`/redirected dev workflow) -
+making the "only visibility during development" logging promised in Phase 2 silently useless.
+Fixed.
+
+## Remaining Phase 3 parts
+
+1. **`phase-3/live-draw`** — WebSocket canvas, delta pixel protocol, in-memory canvas buffer
+2. **`phase-3/paint-by-number`** — K-means, block-reveal, dual-save (hardest of the three)
+
+**Order rationale:** slideshow was closest to what already worked (send an image to the
+renderer), so it extended proven ground. Paint-by-number is hardest and goes last.
 
 **State split principle (applies to all modes):** memory for state that changes every frame,
 database for state that must survive a restart. Drawing strokes stay in an in-memory Buffer;
