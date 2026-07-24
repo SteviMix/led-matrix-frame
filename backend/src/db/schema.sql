@@ -10,9 +10,12 @@ CREATE TABLE IF NOT EXISTS playlists (
 );
 
 -- All images regardless of origin (upload, drawing, paint-by-number export).
+-- playlist_id uses ON DELETE SET NULL, not CASCADE: deleting a playlist must
+-- not delete the images in it (or their files on disk) - an image can exist
+-- outside any playlist, so it is orphaned, not removed.
 CREATE TABLE IF NOT EXISTS images (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  playlist_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE,
+  playlist_id INTEGER REFERENCES playlists(id) ON DELETE SET NULL,
   original_path TEXT NOT NULL,
   processed_path TEXT,
   crop_x INTEGER,
