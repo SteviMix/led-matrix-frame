@@ -10,12 +10,30 @@ const SCRIPT_PATH = path.join(__dirname, "..", "..", "scripts", "process_image.p
 const TIMEOUT_MS = 30000;
 const EXPECTED_BYTES = 128 * 128 * 3;
 
-// Runs process_image.py <inputPath> <outputPath> and resolves once the
-// output file has been verified. Rejects on non-zero exit, unparsable
-// stdout, a script-reported error, or a wrong-sized output file.
-function processImage(inputPath, outputPath) {
+// Runs process_image.py <inputPath> <outputPath> [--crop-x/y/w/h] [--no-dither]
+// and resolves once the output file has been verified. Rejects on non-zero
+// exit, unparsable stdout, a script-reported error, or a wrong-sized output
+// file. `options.cropX/Y/W/H` must all be provided together to apply a crop;
+// `options.dither === false` disables dithering (on by default in the script).
+function processImage(inputPath, outputPath, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("python3", [SCRIPT_PATH, inputPath, outputPath]);
+    const args = [SCRIPT_PATH, inputPath, outputPath];
+
+    const { cropX, cropY, cropW, cropH, dither } = options;
+    const hasCrop = [cropX, cropY, cropW, cropH].every((v) => v !== undefined);
+    if (hasCrop) {
+      args.push(
+        "--crop-x", String(cropX),
+        "--crop-y", String(cropY),
+        "--crop-w", String(cropW),
+        "--crop-h", String(cropH)
+      );
+    }
+    if (dither === false) {
+      args.push("--no-dither");
+    }
+
+    const child = spawn("python3", args);
 
     let stdout = "";
     let stderr = "";

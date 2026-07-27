@@ -75,7 +75,7 @@ def main():
     server.bind(SOCKET_PATH)
     server.listen(1)
 
-    print(f"[renderer_emulator] Listening on {SOCKET_PATH} ({WIDTH}x{HEIGHT})")
+    print(f"[renderer_emulator] Listening on {SOCKET_PATH} ({WIDTH}x{HEIGHT})", flush=True)
 
     try:
         while running:
@@ -87,7 +87,7 @@ def main():
             except OSError:
                 break
 
-            print("[renderer_emulator] Client connected.")
+            print("[renderer_emulator] Client connected.", flush=True)
             conn.settimeout(None)
 
             # Serve frames from this client until it disconnects or we shut down.
@@ -100,7 +100,7 @@ def main():
                 canvas.SetImage(image)
                 canvas = matrix.SwapOnVSync(canvas)
 
-            print("[renderer_emulator] Client disconnected.")
+            print("[renderer_emulator] Client disconnected.", flush=True)
             conn.close()
     except KeyboardInterrupt:
         pass
@@ -109,7 +109,7 @@ def main():
         server.close()
         if os.path.exists(SOCKET_PATH):
             os.unlink(SOCKET_PATH)
-        print("[renderer_emulator] Shutdown complete.")
+        print("[renderer_emulator] Shutdown complete.", flush=True)
 
 
 if __name__ == "__main__":

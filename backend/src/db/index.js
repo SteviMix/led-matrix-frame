@@ -11,8 +11,9 @@ const DB_PATH = path.join(DB_DIR, "ledframe.db");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 
 const DEFAULT_APP_STATE = {
-  current_mode: "slideshow",
+  current_mode: "idle",
   active_playlist: "",
+  slideshow_interval_seconds: "10",
 };
 
 fs.mkdirSync(DB_DIR, { recursive: true });

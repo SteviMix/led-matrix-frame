@@ -19,11 +19,11 @@ A custom digital photo frame built on Raspberry Pi, driving HUB75 LED matrix pan
 
 ## Status
 
-**Phase 2 complete.** The core architecture works end to end, verified against the browser-based emulator (real HUB75 panels have not arrived yet):
+**Phase 3 part 1 complete** (mode management + slideshow), on top of a working Phase 2 pipeline, verified against the browser-based emulator (real HUB75 panels have not arrived yet):
 
-HTTP upload → Python image processing → SQLite → Unix socket → renderer → matrix
+HTTP upload → Python image processing (crop + dither) → SQLite → mode manager → slideshow timer → Unix socket → renderer → matrix
 
-Slideshow crop/pan UI, playlists, live drawing, paint-by-number, and the Angular frontend are not built yet — Phase 2 only proves the pipeline itself.
+Playlists, crop/pan, and dithering all work. A mode manager now guarantees only one mode (slideshow, draw, paint-by-number, idle) can write to the renderer at a time, and the active mode survives a backend restart. Live drawing, paint-by-number, and the Angular frontend are not built yet.
 
 ## Architecture
 
@@ -71,28 +71,43 @@ cd ~/led-frame/backend
 npm start
 ```
 
-**Terminal 3 — manual integration test:**
-```bash
-# Upload an image (returns the created row, including its id)
-curl -X POST -F "image=@/path/to/photo.jpg" http://localhost:3000/api/images
+**Terminal 3 — manual test: playlist → slideshow → restart:**
 
-# Display it on the matrix (use the id from the upload response)
-curl -X POST http://localhost:3000/api/images/1/display
-```
-Confirm in the browser that the photo appears center-cropped to a square and resized to 128x128 (never stretched).
-
-**Restart proof (the reason SQLite is in the stack):** stop the backend (Ctrl+C in terminal 2), start it again (`npm start`), then without touching terminal 1 or re-uploading:
 ```bash
-curl http://localhost:3000/api/images
-curl -X POST http://localhost:3000/api/images/1/display
+# Create a playlist
+curl -X POST -H "Content-Type: application/json" -d '{"name":"My playlist"}' http://localhost:3000/api/playlists
+# -> {"id":1,...}
+
+# Upload a couple of images (each returns its row, including its id)
+curl -X POST -F "image=@/path/to/photo1.jpg" http://localhost:3000/api/images
+curl -X POST -F "image=@/path/to/photo2.jpg" http://localhost:3000/api/images
+
+# Assign each image to the playlist (repeat per image id)
+curl -X PATCH -H "Content-Type: application/json" -d '{"playlistId":1}' http://localhost:3000/api/images/1
+curl -X PATCH -H "Content-Type: application/json" -d '{"playlistId":1}' http://localhost:3000/api/images/2
+
+# Start the slideshow on that playlist
+curl -X POST -H "Content-Type: application/json" -d '{"playlistId":1}' http://localhost:3000/api/modes/slideshow/start
 ```
-Both should still work — the row survived the restart and the image displays again.
+
+Watch `http://ledframe.local:8888` — the images should cycle automatically (every 10s by default; `PATCH /api/modes/slideshow/settings` with `{"intervalSeconds":2}` to speed that up while testing). `POST /api/modes/slideshow/next` and `/previous` jump manually.
+
+**Restart proof (the reason SQLite is in the stack):** with the slideshow running, stop the backend (Ctrl+C in terminal 2) and start it again (`npm start`) — without touching terminal 1 or re-creating anything:
+```bash
+curl http://localhost:3000/api/status
+```
+`mode.mode` should already read `"slideshow"` with the same playlist and the timer running again — the backend read `current_mode` and `active_playlist` back out of `app_state` on startup and resumed on its own.
+
+**Cropping an image** (re-processes the original, overwrites the processed file, never touches the original):
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"cropX":50,"cropY":50,"cropW":150,"cropH":150}' http://localhost:3000/api/images/1/crop
+```
 
 **Status check** at any point:
 ```bash
 curl http://localhost:3000/api/status
 ```
-Reports renderer connection state, DB connection state, and row counts per table.
+Reports renderer connection state, DB connection state, row counts per table, and current mode state (mode name, active playlist, image count, current index, interval, running).
 
 ## C++ renderer
 
