@@ -168,7 +168,8 @@ no length prefix. Identical across C++, Python, and Node. Pixel (x, y) starts at
 
 ## Phase 3 part 1 — COMPLETE (mode manager + slideshow)
 
-Branch `phase-3/slideshow`, not yet merged. Delivered:
+Merged to `main` via PR "Phase 3 part 1: mode management and slideshow" (branch `phase-3/slideshow`,
+deleted after merge). Delivered:
 
 - **Mode manager** (`backend/src/modes/mode-manager.js`) — tracks the active mode
   (`slideshow`/`draw`/`paint-by-number`/`idle`), enforces that switching always fully stops the
