@@ -1,38 +1,24 @@
-// Wraps scripts/process_image.py. This is the only file in the backend that
-// knows Python exists - Node never decodes, resizes, or crops an image
-// itself, it just spawns the script and passes file paths.
+// Wraps the Python image scripts (scripts/process_image.py,
+// scripts/raw_to_png.py). This is the only file in the backend that knows
+// Python exists - Node never decodes, resizes, crops, or encodes an image
+// itself, it just spawns a script and passes file paths.
 
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const SCRIPT_PATH = path.join(__dirname, "..", "..", "scripts", "process_image.py");
+const SCRIPTS_DIR = path.join(__dirname, "..", "..", "scripts");
+const PROCESS_IMAGE_SCRIPT = path.join(SCRIPTS_DIR, "process_image.py");
+const RAW_TO_PNG_SCRIPT = path.join(SCRIPTS_DIR, "raw_to_png.py");
 const TIMEOUT_MS = 30000;
-const EXPECTED_BYTES = 128 * 128 * 3;
+const FRAME_BYTES = 128 * 128 * 3;
 
-// Runs process_image.py <inputPath> <outputPath> [--crop-x/y/w/h] [--no-dither]
-// and resolves once the output file has been verified. Rejects on non-zero
-// exit, unparsable stdout, a script-reported error, or a wrong-sized output
-// file. `options.cropX/Y/W/H` must all be provided together to apply a crop;
-// `options.dither === false` disables dithering (on by default in the script).
-function processImage(inputPath, outputPath, options = {}) {
+// Runs `python3 <args>`, resolving with the parsed JSON result printed on
+// stdout. Rejects on non-zero exit, unparsable stdout, a script-reported
+// error, or a timeout (so a hung Python process can't block a request
+// forever).
+function runPythonScript(args) {
   return new Promise((resolve, reject) => {
-    const args = [SCRIPT_PATH, inputPath, outputPath];
-
-    const { cropX, cropY, cropW, cropH, dither } = options;
-    const hasCrop = [cropX, cropY, cropW, cropH].every((v) => v !== undefined);
-    if (hasCrop) {
-      args.push(
-        "--crop-x", String(cropX),
-        "--crop-y", String(cropY),
-        "--crop-w", String(cropW),
-        "--crop-h", String(cropH)
-      );
-    }
-    if (dither === false) {
-      args.push("--no-dither");
-    }
-
     const child = spawn("python3", args);
 
     let stdout = "";
@@ -43,7 +29,7 @@ function processImage(inputPath, outputPath, options = {}) {
       if (settled) return;
       settled = true;
       child.kill("SIGKILL");
-      reject(new Error(`process_image.py timed out after ${TIMEOUT_MS}ms`));
+      reject(new Error(`${args[0]} timed out after ${TIMEOUT_MS}ms`));
     }, TIMEOUT_MS);
 
     child.stdout.on("data", (chunk) => {
@@ -58,7 +44,7 @@ function processImage(inputPath, outputPath, options = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`Failed to start process_image.py: ${err.message}`));
+      reject(new Error(`Failed to start ${args[0]}: ${err.message}`));
     });
 
     child.on("close", (code) => {
@@ -70,33 +56,12 @@ function processImage(inputPath, outputPath, options = {}) {
       try {
         result = JSON.parse(stdout.trim());
       } catch (err) {
-        reject(
-          new Error(
-            `process_image.py produced invalid JSON (exit ${code}): ${stdout || stderr}`
-          )
-        );
+        reject(new Error(`${args[0]} produced invalid JSON (exit ${code}): ${stdout || stderr}`));
         return;
       }
 
       if (code !== 0 || !result.ok) {
-        reject(new Error(`process_image.py failed: ${result.error || stderr || "unknown error"}`));
-        return;
-      }
-
-      let stats;
-      try {
-        stats = fs.statSync(outputPath);
-      } catch (err) {
-        reject(new Error(`Output file missing after processing: ${outputPath}`));
-        return;
-      }
-
-      if (stats.size !== EXPECTED_BYTES) {
-        reject(
-          new Error(
-            `Output file has wrong size: ${stats.size} bytes, expected ${EXPECTED_BYTES}`
-          )
-        );
+        reject(new Error(`${args[0]} failed: ${result.error || stderr || "unknown error"}`));
         return;
       }
 
@@ -105,4 +70,52 @@ function processImage(inputPath, outputPath, options = {}) {
   });
 }
 
-module.exports = { processImage };
+// Runs process_image.py <inputPath> <outputPath> [--crop-x/y/w/h] [--no-dither]
+// and resolves once the output file has been verified. `options.cropX/Y/W/H`
+// must all be provided together to apply a crop; `options.dither === false`
+// disables dithering (on by default in the script).
+async function processImage(inputPath, outputPath, options = {}) {
+  const args = [PROCESS_IMAGE_SCRIPT, inputPath, outputPath];
+
+  const { cropX, cropY, cropW, cropH, dither } = options;
+  const hasCrop = [cropX, cropY, cropW, cropH].every((v) => v !== undefined);
+  if (hasCrop) {
+    args.push(
+      "--crop-x", String(cropX),
+      "--crop-y", String(cropY),
+      "--crop-w", String(cropW),
+      "--crop-h", String(cropH)
+    );
+  }
+  if (dither === false) {
+    args.push("--no-dither");
+  }
+
+  const result = await runPythonScript(args);
+
+  let stats;
+  try {
+    stats = fs.statSync(outputPath);
+  } catch (err) {
+    throw new Error(`Output file missing after processing: ${outputPath}`);
+  }
+  if (stats.size !== FRAME_BYTES) {
+    throw new Error(`Output file has wrong size: ${stats.size} bytes, expected ${FRAME_BYTES}`);
+  }
+
+  return result;
+}
+
+// Runs raw_to_png.py <rawPath> <pngPath> - converts an already-raw 128x128
+// RGB file (e.g. a saved drawing canvas) into a viewable PNG.
+async function convertRawToPng(rawPath, pngPath) {
+  const result = await runPythonScript([RAW_TO_PNG_SCRIPT, rawPath, pngPath]);
+
+  if (!fs.existsSync(pngPath)) {
+    throw new Error(`Output file missing after conversion: ${pngPath}`);
+  }
+
+  return result;
+}
+
+module.exports = { processImage, convertRawToPng };
