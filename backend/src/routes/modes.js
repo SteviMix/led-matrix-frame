@@ -68,6 +68,42 @@ function createModesRouter({ modeManager }) {
     res.json({ intervalSeconds });
   });
 
+  router.post("/draw/start", async (req, res) => {
+    try {
+      const state = await modeManager.switchMode("draw");
+      res.json(state);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post("/draw/stop", async (req, res) => {
+    const state = await modeManager.switchMode("idle");
+    res.json(state);
+  });
+
+  router.post("/draw/clear", (req, res) => {
+    if (modeManager.getCurrentModeName() !== "draw") {
+      res.status(409).json({ error: "Draw mode is not active." });
+      return;
+    }
+    modeManager.getCurrentInstance().clear();
+    res.json(modeManager.getState());
+  });
+
+  router.post("/draw/save", async (req, res) => {
+    if (modeManager.getCurrentModeName() !== "draw") {
+      res.status(409).json({ error: "Draw mode is not active." });
+      return;
+    }
+    try {
+      const row = await modeManager.getCurrentInstance().save();
+      res.status(201).json(row);
+    } catch (err) {
+      res.status(500).json({ error: `Save failed: ${err.message}` });
+    }
+  });
+
   return router;
 }
 
