@@ -208,13 +208,65 @@ whenever stdout wasn't a TTY (i.e. always, in this project's `nohup`/redirected 
 making the "only visibility during development" logging promised in Phase 2 silently useless.
 Fixed.
 
-## Remaining Phase 3 parts
+## Phase 3 part 2 — COMPLETE (collaborative live drawing)
 
-1. **`phase-3/live-draw`** — WebSocket canvas, delta pixel protocol, in-memory canvas buffer
-2. **`phase-3/paint-by-number`** — K-means, block-reveal, dual-save (hardest of the three)
+Merged to `main` via PR "Phase 3 part 2: collaborative live drawing" (branch `phase-3/live-draw`).
+Delivered:
+
+- **Draw mode** (`backend/src/modes/draw.js`) — implements the same start/stop/getState interface
+  as slideshow, registered with the mode manager the same way. Two decoupled rates, which is the
+  core design point of this feature: strokes are applied to an in-memory 49152-byte canvas
+  `Buffer` immediately, at whatever rate clients send them; a separate fixed-cadence render loop
+  (`setInterval`, ~30fps) sends the canvas to the renderer only if a `dirty` flag is set - never
+  one frame per stroke, which would flood the Unix socket and reintroduce the backpressure
+  problem `renderer-client.js` already solves.
+- **WebSocket endpoint** (`/ws/draw`, via `ws`) — a single `WebSocketServer` is created once at
+  startup, attached to the same `http.Server` Express uses. Its `connection` listener is
+  registered exactly once, permanently, and dispatches to whichever draw-mode instance is
+  currently `modeManager.getCurrentInstance()` (rejecting with close code 1013 if the mode isn't
+  `draw`). This was a deliberate choice over registering/deregistering the listener inside the
+  mode's own `start()`/`stop()`: since mode-manager creates a **new** mode instance on every
+  `switchMode()` call, doing it there would leak one more stale listener on the shared `wss`
+  every time the user switched back into draw mode.
+- **Delta pixel protocol** — clients send `{x, y, r, g, b}` (or `{points: [...]}` for a batch).
+  Every coordinate and colour byte is validated (`0 <= x,y < 128`, `0 <= r,g,b <= 255`,
+  integers only); malformed or out-of-range messages are silently dropped, never applied,
+  never crash the process. Verified at the byte level, not just "didn't crash": sent an
+  out-of-range point, then read back the target pixel from a fresh snapshot and confirmed it
+  was untouched.
+- **Collaborative** — each connection gets a unique id on connect; a stroke is applied to the
+  canvas and broadcast to every **other** connected client (never echoed back to the sender,
+  which already applied it locally); a newly connecting client gets one full canvas snapshot
+  (base64-encoded raw RGB) before switching to receiving deltas like everyone else.
+- **`POST /api/modes/draw/clear`** — blacks out the canvas, broadcasts the clear to all clients.
+- **`POST /api/modes/draw/save`** — the only point drawing touches SQLite. The canvas is already
+  in the exact raw renderer format, so it's written straight to `processed_path` with no Python
+  involved; `original_path` needs to be a real decodable image (so `/api/images/:id/crop` and a
+  future UI can treat it like any other image), which does require Python - a new
+  `scripts/raw_to_png.py` (PIL) handles that one conversion. Inserts an `images` row with
+  `source = 'draw'`.
+- **`getLastFrame()` added to `renderer-client.js`** — the prerequisite the read-only viewer
+  needs later: whichever mode last actually wrote a frame to the socket, this one variable
+  holds it, so a future `GET /api/current-frame` doesn't need its own tracking.
+- Dev-only test client at `backend/public/draw-test.html` (served via `express.static`) - there's
+  no Angular frontend yet, so this is how the feature gets verified by hand: open it in multiple
+  tabs and draw.
+
+**Verified end to end**, not just asserted: two simulated WebSocket clients (Node `ws`, not just
+manual browser clicking) confirmed broadcast-without-echo; a third client connecting mid-session
+confirmed it received a snapshot with the correct pixel already set; clear and save were
+exercised over HTTP and checked against the database and disk; and the mode-switch teardown was
+checked two ways - code review of `stop()` (unconditional `clearInterval`), plus confirming
+empirically that after switching away, the draw endpoints 409 and a fresh `start()` produces a
+blank canvas (proving the old instance, with its timer, was discarded rather than merely paused).
+
+## Remaining Phase 3 part
+
+1. **`phase-3/paint-by-number`** — K-means, block-reveal, dual-save (hardest of the three)
 
 **Order rationale:** slideshow was closest to what already worked (send an image to the
-renderer), so it extended proven ground. Paint-by-number is hardest and goes last.
+renderer), so it extended proven ground; live drawing built the WebSocket/mode-interface pattern
+on top of that. Paint-by-number is hardest and goes last.
 
 **State split principle (applies to all modes):** memory for state that changes every frame,
 database for state that must survive a restart. Drawing strokes stay in an in-memory Buffer;
