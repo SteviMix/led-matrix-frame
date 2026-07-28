@@ -19,11 +19,9 @@ A custom digital photo frame built on Raspberry Pi, driving HUB75 LED matrix pan
 
 ## Status
 
-**Phase 3 part 1 complete** (mode management + slideshow), on top of a working Phase 2 pipeline, verified against the browser-based emulator (real HUB75 panels have not arrived yet):
+**Phase 3 part 2 complete** (collaborative live drawing), on top of mode management + slideshow (part 1) and a working Phase 2 pipeline, verified against the browser-based emulator (real HUB75 panels have not arrived yet).
 
-HTTP upload → Python image processing (crop + dither) → SQLite → mode manager → slideshow timer → Unix socket → renderer → matrix
-
-Playlists, crop/pan, and dithering all work. A mode manager now guarantees only one mode (slideshow, draw, paint-by-number, idle) can write to the renderer at a time, and the active mode survives a backend restart. Live drawing, paint-by-number, and the Angular frontend are not built yet.
+Playlists, crop/pan, dithering, and slideshow all work. Live drawing now works too: any number of browser tabs can draw on a shared 128x128 canvas over a WebSocket, see each other's strokes in real time, and the canvas streams to the renderer at a fixed ~30fps independent of how fast people draw. Paint-by-number and the Angular frontend are not built yet.
 
 ## Architecture
 
@@ -108,6 +106,35 @@ curl -X POST -H "Content-Type: application/json" -d '{"cropX":50,"cropY":50,"cro
 curl http://localhost:3000/api/status
 ```
 Reports renderer connection state, DB connection state, row counts per table, and current mode state (mode name, active playlist, image count, current index, interval, running).
+
+## Manual test: live drawing (Phase 3 part 2)
+
+There's no Angular frontend yet, so `backend/public/draw-test.html` (served automatically by the backend) is the manual test client — a plain HTML canvas that talks to `/ws/draw`.
+
+With **Terminal 1** (renderer) and **Terminal 2** (backend) already running:
+
+```bash
+curl -X POST http://localhost:3000/api/modes/draw/start
+```
+
+Then, from a Mac/laptop on the same network:
+
+1. Open `http://ledframe.local:3000/draw-test.html` in **two separate browser tabs** (or two different devices).
+2. Draw in tab 1 — strokes should appear in **both** tab 1 (drawn locally as you go) and tab 2 (received over the WebSocket), and on the matrix in `http://ledframe.local:8888`.
+3. Open a **third** tab mid-session — it should immediately show the existing drawing (the snapshot sent on connect), not a blank canvas.
+4. Click **Clear** in any tab — all tabs should go blank together.
+5. Draw something, click **Save** — it should alert with a new image id. Confirm it landed in the database:
+   ```bash
+   curl http://localhost:3000/api/images
+   ```
+   The newest row should have `"source":"draw"`, and both `original_path` (a `.png`) and `processed_path` (a `.rgb`) should exist on disk.
+6. Switch away and back to confirm the render loop is fully torn down, not leaked:
+   ```bash
+   curl -X POST http://localhost:3000/api/modes/slideshow/stop   # -> idle
+   curl -X POST http://localhost:3000/api/modes/draw/clear       # -> 409, draw is not active
+   curl -X POST http://localhost:3000/api/modes/draw/start       # -> fresh blank canvas, old drawing gone
+   ```
+   A stray timer from the old session would keep pushing frames after step 6's `stop`; a fresh, blank canvas on the next `start` confirms the old instance was fully discarded, not paused.
 
 ## C++ renderer
 

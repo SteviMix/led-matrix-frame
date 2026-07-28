@@ -16,6 +16,10 @@ function createRendererClient() {
   let lastWriteOk = true; // false when the previous write reported backpressure
   let reconnectTimer = null;
   let closing = false;
+  // Last frame actually written to the socket, regardless of which mode sent
+  // it. Prerequisite for the future read-only viewer (GET /api/current-frame)
+  // and useful for debugging - not otherwise used here.
+  let lastFrame = null;
 
   function scheduleReconnect() {
     if (reconnectTimer || closing) return;
@@ -100,8 +104,13 @@ function createRendererClient() {
       return false;
     }
 
+    lastFrame = buffer;
     lastWriteOk = socket.write(buffer);
     return true;
+  }
+
+  function getLastFrame() {
+    return lastFrame;
   }
 
   connect();
@@ -110,6 +119,7 @@ function createRendererClient() {
     sendFrame,
     isConnected,
     close,
+    getLastFrame,
   };
 }
 

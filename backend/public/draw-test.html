@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<!--
+  Dev-only manual test client for the /ws/draw WebSocket. There is no
+  Angular frontend yet (Phase 4) - this is how live-drawing gets verified
+  by hand: open this page in multiple browser tabs and draw.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ledframe draw test</title>
+<style>
+  body { font-family: sans-serif; background: #222; color: #eee; text-align: center; }
+  canvas { border: 1px solid #666; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+  #status { margin: 8px; }
+  button, input { margin: 4px; }
+</style>
+</head>
+<body>
+<h3>ledframe draw test</h3>
+<div id="status">connecting...</div>
+<canvas id="canvas" width="128" height="128" style="width: 512px; height: 512px;"></canvas>
+<div>
+  <input type="color" id="color" value="#ff0000">
+  <button id="clearBtn">Clear</button>
+  <button id="saveBtn">Save</button>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const colorInput = document.getElementById("color");
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function drawPixel(x, y, r, g, b) {
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.fillRect(x, y, 1, 1);
+}
+
+function drawSnapshot(base64) {
+  const bytes = atob(base64);
+  const img = ctx.createImageData(128, 128);
+  for (let i = 0; i < 128 * 128; i++) {
+    img.data[i * 4] = bytes.charCodeAt(i * 3);
+    img.data[i * 4 + 1] = bytes.charCodeAt(i * 3 + 1);
+    img.data[i * 4 + 2] = bytes.charCodeAt(i * 3 + 2);
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+const ws = new WebSocket(`ws://${location.host}/ws/draw`);
+
+ws.onopen = () => { statusEl.textContent = "connected"; };
+ws.onclose = () => { statusEl.textContent = "disconnected"; };
+ws.onerror = () => { statusEl.textContent = "error (is draw mode started?)"; };
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === "snapshot") {
+    drawSnapshot(msg.pixels);
+  } else if (msg.type === "stroke") {
+    for (const p of msg.points) drawPixel(p.x, p.y, p.r, p.g, p.b);
+  } else if (msg.type === "clear") {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, 128, 128);
+  }
+};
+
+let drawing = false;
+
+function pointFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = Math.floor((e.clientX - rect.left) * scaleX);
+  const y = Math.floor((e.clientY - rect.top) * scaleY);
+  return { x, y };
+}
+
+let lastPoint = null;
+
+// pointermove doesn't fire for every grid cell the cursor crosses during a
+// fast drag - it fires at the browser's sampling rate, which can skip many
+// cells in between. Without interpolating, a fast stroke leaves visible
+// gaps. Bresenham fills in every cell between the last sampled point and
+// this one, and the whole line is sent as one batched {points: [...]}
+// message - the batched form the protocol already supports but a single
+// point per event never exercised.
+function lineCells(x0, y0, x1, y1) {
+  const cells = [];
+  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  let x = x0, y = y0;
+  while (true) {
+    cells.push({ x, y });
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+  return cells;
+}
+
+function sendAndDrawLocally(x, y) {
+  if (x < 0 || x >= 128 || y < 0 || y >= 128) return;
+  const { r, g, b } = hexToRgb(colorInput.value);
+
+  const cells = lastPoint ? lineCells(lastPoint.x, lastPoint.y, x, y) : [{ x, y }];
+  lastPoint = { x, y };
+
+  const points = cells.map((c) => ({ x: c.x, y: c.y, r, g, b }));
+  for (const p of points) drawPixel(p.x, p.y, p.r, p.g, p.b); // optimistic local draw - we never receive our own echo
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ points }));
+  }
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  drawing = true;
+  lastPoint = null;
+  const { x, y } = pointFromEvent(e);
+  sendAndDrawLocally(x, y);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drawing) return;
+  const { x, y } = pointFromEvent(e);
+  sendAndDrawLocally(x, y);
+});
+window.addEventListener("pointerup", () => { drawing = false; lastPoint = null; });
+
+document.getElementById("clearBtn").addEventListener("click", () => {
+  fetch("/api/modes/draw/clear", { method: "POST" });
+});
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const res = await fetch("/api/modes/draw/save", { method: "POST" });
+  const body = await res.json();
+  alert(res.ok ? `Saved as image id ${body.id}` : `Save failed: ${body.error}`);
+});
+</script>
+</body>
+</html>
