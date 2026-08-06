@@ -260,24 +260,91 @@ checked two ways - code review of `stop()` (unconditional `clearInterval`), plus
 empirically that after switching away, the draw endpoints 409 and a fresh `start()` produces a
 blank canvas (proving the old instance, with its timer, was discarded rather than merely paused).
 
-## Remaining Phase 3 part
+## Phase 3 part 3 — COMPLETE (paint-by-number) — Phase 3 now fully done
 
-1. **`phase-3/paint-by-number`** — K-means, block-reveal, dual-save (hardest of the three)
+Merged to `main` via PR "Phase 3 part 3: paint-by-number" (branch `phase-3/paint-by-number`).
+The last and hardest of the three modes, as planned. Delivered:
 
-**Order rationale:** slideshow was closest to what already worked (send an image to the
-renderer), so it extended proven ground; live drawing built the WebSocket/mode-interface pattern
-on top of that. Paint-by-number is hardest and goes last.
+- **`scripts/pbn_analyze.py`** — K-means (16-colour palette, RGB by default; `use_lab` flag
+  structured as a one-line flip to cluster in LAB instead later, matching the Future Improvements
+  plan below) over the 128x128 image, then divides it into a difficulty-sized block grid and
+  assigns each block the *dominant* (most common, not averaged - averaging muddies blocks that
+  straddle two regions) palette index among its pixels. Difficulty -> grid size, confirmed
+  sensible and exercised at all three: `easy` 16x16 (8x8px blocks, 256 blocks), `medium` 32x32
+  (4x4px, 1024 blocks), `hard` 64x64 (2x2px, 4096 blocks - close to per-pixel painting, which is
+  right for the top difficulty on a 128x128 panel). Also writes the full-res 128x128 original as
+  a raw RGB file (NOT dithered - the reveal effect should show genuine photo detail, not a
+  display-adapted approximation) for the reveal effect.
+- **`scripts/image_utils.py`** — extracted the center-crop/resize logic shared between
+  `process_image.py` and `pbn_analyze.py` into one place, so both scripts crop and resize
+  identically instead of maintaining two copies of the same math.
+- **Paint-by-number mode** (`backend/src/modes/paint-by-number.js`) — same start/stop/getState
+  interface as the other two. Holds palette, per-block answers, and progress in memory; composes
+  the panel frame by showing a dimmed hint colour for unrevealed blocks and the real full-res
+  pixels for revealed ones. Same dirty-flag render discipline as drawing, just on a much slower
+  10fps timer (block colouring is a discrete, human-paced HTTP action, not a continuous stream
+  like strokes - a fast timer would just be wasted checks).
+- **Colouring protocol** (`backend/src/routes/pbn.js`, `POST /api/pbn/:id/color`) - deliberately
+  **stateless/DB-driven**, not routed through the mode instance: since progress is persisted on
+  every correct move, unlike drawing's ephemeral canvas a paint-by-number session's data is
+  always fully recoverable from SQLite alone, so colouring works even when paint-by-number isn't
+  the active mode (verified: coloured a block while mode was `idle`, then switched back into
+  paint-by-number and confirmed it picked up the change). The route *additionally* pokes the live
+  mode instance's `markRevealed()` when it happens to be showing the exact session being coloured,
+  purely so the panel updates immediately rather than waiting up to 100ms for the next render tick.
+- **Endpoints**: `POST /api/pbn/create` (upload + difficulty -> session + palette),
+  `GET /api/pbn/:id` (palette, grid, block answers, progress - what a Phase 4 frontend needs to
+  render the numbered grid and colour picker), `POST /api/pbn/:id/color`,
+  `POST /api/modes/paint-by-number/start` / `/stop`, `POST /api/pbn/:id/save` (dual-save: a flat
+  "pixel art" render of the block grid + the full-res revealed photo, both inserted as
+  `images` rows with `source = 'paint-by-number'` so they can go into a slideshow). `completed`
+  is set the moment the last block is coloured (in the `/color` handler, as a direct consequence
+  of state), not by `/save` - `/save` requires `completed = 1` as a precondition and is a pure
+  export action, callable any time after.
+
+**Verified end to end**, not just asserted:
+- Unit-tested `composeFrame()` in isolation against the real analyzed session data: confirmed the
+  dimmed-hint pixel values match the expected `palette colour x 0.35` exactly, and that revealing
+  a block switches those exact pixels to the real `full_res` bytes while an untouched block
+  elsewhere stays dimmed.
+- Colored blocks over live HTTP: wrong moves confirmed rejected (progress byte-for-byte
+  unchanged); correct moves confirmed to update progress and the live in-memory render state
+  (`/api/status` `revealedCount` tracked correctly); both `blockIndex` and `x`/`y` addressing
+  worked; out-of-range indices rejected with 400, never crashed the process.
+- Restarted the backend mid-session (a few blocks coloured, not complete) and confirmed
+  `mode-manager` resumed straight into `paint-by-number` with the same `revealedCount` - the
+  actual point of persisting `progress_json` on every move.
+- Completed a full 256-block (`easy`) session programmatically, confirmed `completed: true`,
+  called `/save`, and **visually confirmed both output images**: the pixel-art save is visibly
+  blocky (8x8px cells), the revealed save is the smooth original - proving the dual-save produces
+  two genuinely different, correct images, not two copies of the same thing.
+
+**Design decisions worth flagging:**
+- Palette size fixed at 16 for now (`PALETTE_SIZE` constant in `pbn_analyze.py`), per the
+  documented "12-16, can be fixed for now" plan.
+- The hint-dim factor (0.35) is a placeholder, like the dithering level count - both are
+  guesses at what will look right on real panel hardware, to be recalibrated in Phase 6.
+- Numbers are never rendered on the panel - confirmed this stays purely a Phase 4 frontend
+  concern; the backend only exposes the data (`palette`, `blockColors`) needed to render them.
+
+**Order rationale (in retrospect):** slideshow was closest to what already worked (send an image
+to the renderer), so it extended proven ground; live drawing built the WebSocket/mode-interface
+pattern on top of that; paint-by-number reused both (the mode interface from slideshow/drawing,
+and the "stateless DB-driven route + optional live-instance sync" pattern is new here, driven by
+the fact that - unique among the three modes - paint-by-number's state is durable by design from
+the very first correct move, not just at an explicit save point).
 
 **State split principle (applies to all modes):** memory for state that changes every frame,
 database for state that must survive a restart. Drawing strokes stay in an in-memory Buffer;
-only the finished image is written to SQLite. Same rule later for games — ball position in
-memory, match result in the database.
+only the finished image is written to SQLite. Paint-by-number progress is the exception that
+proves useful: it's written to SQLite on every correct move, not just at the end, because
+colouring takes days and losing days of progress to a power cut would defeat the point.
 
 ---
 
 ## Remaining Roadmap (after Phase 2)
 
-- **Phase 3 — Three modes:** Slideshow (crop/pan, dithering, playlists), Live Draw (WebSocket canvas, delta pixel protocol), Paint-by-Number (K-means, block-reveal, dual-save — start in RGB, switch to LAB later; see Future Improvements), Read-only viewer (see definition below)
+- **Phase 3 — COMPLETE.** All three modes done: Slideshow (crop/pan, dithering, playlists), Live Draw (WebSocket canvas, delta pixel protocol), Paint-by-Number (K-means, block-reveal, dual-save — currently RGB, LAB is a documented one-line flag flip for later; see Future Improvements). The Read-only viewer (see definition below) is not built yet — planned for Phase 4, alongside the frontend.
 
 #### DEFINITION — Read-only viewer
 Previously an undefined one-line item; now specified. It serves two purposes:
