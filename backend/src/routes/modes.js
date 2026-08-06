@@ -104,6 +104,34 @@ function createModesRouter({ modeManager }) {
     }
   });
 
+  router.post("/paint-by-number/start", async (req, res) => {
+    const { sessionId } = req.body || {};
+
+    if (sessionId !== undefined) {
+      const session = db.prepare("SELECT id FROM pbn_sessions WHERE id = ?").get(sessionId);
+      if (!session) {
+        res.status(404).json({ error: "Session not found." });
+        return;
+      }
+      db.prepare(
+        `INSERT INTO app_state (key, value) VALUES ('active_pbn_session', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      ).run(String(sessionId));
+    }
+
+    try {
+      const state = await modeManager.switchMode("paint-by-number");
+      res.json(state);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post("/paint-by-number/stop", async (req, res) => {
+    const state = await modeManager.switchMode("idle");
+    res.json(state);
+  });
+
   return router;
 }
 

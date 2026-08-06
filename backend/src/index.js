@@ -1,6 +1,6 @@
-// Phase 3 part 2: collaborative live drawing, on top of mode management +
-// slideshow. Still no paint-by-number or Angular frontend - those are part
-// 3 and Phase 4.
+// Phase 3 part 3: paint-by-number, on top of mode management, slideshow,
+// and live drawing. All three modes now implemented; the Angular frontend
+// is Phase 4.
 
 const http = require("http");
 const path = require("path");
@@ -11,9 +11,11 @@ const { db, close: closeDb } = require("./db");
 const { createModeManager } = require("./modes/mode-manager");
 const { createSlideshowMode } = require("./modes/slideshow");
 const { createDrawMode } = require("./modes/draw");
+const { createPaintByNumberMode } = require("./modes/paint-by-number");
 const playlistsRouter = require("./routes/playlists");
 const { createImagesRouter } = require("./routes/images");
 const { createModesRouter } = require("./routes/modes");
+const { createPbnRouter } = require("./routes/pbn");
 
 const PORT = 3000;
 const WIDTH = 128;
@@ -32,6 +34,7 @@ const rendererClient = createRendererClient();
 const modeManager = createModeManager({ db });
 modeManager.register("slideshow", () => createSlideshowMode({ db, rendererClient }));
 modeManager.register("draw", () => createDrawMode({ db, rendererClient }));
+modeManager.register("paint-by-number", () => createPaintByNumberMode({ db, rendererClient }));
 
 const startTime = Date.now();
 
@@ -97,6 +100,7 @@ app.post("/api/test-frame", (req, res) => {
 app.use("/api/playlists", playlistsRouter);
 app.use("/api/images", createImagesRouter({ rendererClient }));
 app.use("/api/modes", createModesRouter({ modeManager }));
+app.use("/api/pbn", createPbnRouter({ modeManager }));
 
 // http.createServer(app) instead of app.listen() so the WebSocketServer can
 // attach to the same underlying server before we start listening - needed
