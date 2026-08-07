@@ -17,10 +17,9 @@ import argparse
 import json
 import sys
 
-import cv2
 import numpy as np
 
-TARGET_SIZE = 128
+from image_utils import load_and_prepare, TARGET_SIZE
 
 # Approximates the panel's real bit depth: LED matrices don't have full
 # 8-bit-per-channel output in practice, and at 128x128 there are too few
@@ -71,31 +70,7 @@ def floyd_steinberg_dither(rgb, levels=DITHER_LEVELS):
 
 
 def process_image(input_path, output_path, crop=None, dither=True):
-    image = cv2.imread(input_path, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError(f"Could not read image at {input_path}")
-
-    height, width = image.shape[:2]
-
-    if crop is not None:
-        crop_x, crop_y, crop_w, crop_h = crop
-        if crop_w <= 0 or crop_h <= 0 or crop_x < 0 or crop_y < 0 or crop_x + crop_w > width or crop_y + crop_h > height:
-            raise ValueError(
-                f"Crop rectangle ({crop_x},{crop_y},{crop_w},{crop_h}) is out of bounds for {width}x{height} image"
-            )
-        cropped = image[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
-    else:
-        # Center-crop to a square before resizing, so the result is never
-        # stretched - a stretched face is immediately obvious on the panel.
-        side = min(height, width)
-        top = (height - side) // 2
-        left = (width - side) // 2
-        cropped = image[top:top + side, left:left + side]
-
-    resized = cv2.resize(cropped, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_AREA)
-
-    # OpenCV loads as BGR; the renderer protocol expects RGB.
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    rgb = load_and_prepare(input_path, crop=crop)
 
     if dither:
         rgb = floyd_steinberg_dither(rgb)

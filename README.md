@@ -19,9 +19,9 @@ A custom digital photo frame built on Raspberry Pi, driving HUB75 LED matrix pan
 
 ## Status
 
-**Phase 3 part 2 complete** (collaborative live drawing), on top of mode management + slideshow (part 1) and a working Phase 2 pipeline, verified against the browser-based emulator (real HUB75 panels have not arrived yet).
+**Phase 3 complete** — all three interactive modes (slideshow, live drawing, paint-by-number) work end to end against the browser-based emulator (real HUB75 panels have not arrived yet).
 
-Playlists, crop/pan, dithering, and slideshow all work. Live drawing now works too: any number of browser tabs can draw on a shared 128x128 canvas over a WebSocket, see each other's strokes in real time, and the canvas streams to the renderer at a fixed ~30fps independent of how fast people draw. Paint-by-number and the Angular frontend are not built yet.
+Playlists, crop/pan, dithering, and slideshow all work. Live drawing lets any number of browser tabs paint on a shared 128x128 canvas over a WebSocket, seeing each other's strokes in real time, streamed to the renderer at a fixed ~30fps independent of how fast people draw. Paint-by-number analyzes an uploaded photo into a K-means colour palette and a difficulty-sized block grid; the panel shows dimmed hint colours for unsolved blocks and reveals true photo detail as each block is coloured correctly, with progress persisted so a session can be resumed after a restart. The Angular frontend (Phase 4) is not built yet — paint-by-number's number/colour-picker UI in particular is entirely a Phase 4 concern; this backend only produces the data and enforces the rules.
 
 ## Architecture
 
@@ -135,6 +135,46 @@ Then, from a Mac/laptop on the same network:
    curl -X POST http://localhost:3000/api/modes/draw/start       # -> fresh blank canvas, old drawing gone
    ```
    A stray timer from the old session would keep pushing frames after step 6's `stop`; a fresh, blank canvas on the next `start` confirms the old instance was fully discarded, not paused.
+
+## Manual test: paint-by-number (Phase 3 part 3)
+
+No frontend yet, so this is all `curl` — the panel itself is the only visual feedback (open `http://ledframe.local:8888`).
+
+With **Terminal 1** (renderer) and **Terminal 2** (backend) already running:
+
+```bash
+# Create a session (difficulty: easy | medium | hard -> 16x16 | 32x32 | 64x64 block grid)
+curl -X POST -F "image=@/path/to/photo.jpg" -F "difficulty=easy" http://localhost:3000/api/pbn/create
+# -> {"id":1,"gridWidth":16,"gridHeight":16,"palette":[[r,g,b],...]}  (16 colours, index = the "number")
+
+# Inspect the full session: palette, per-block correct answers, and progress
+curl http://localhost:3000/api/pbn/1
+
+# Start the mode on that session
+curl -X POST -H "Content-Type: application/json" -d '{"sessionId":1}' http://localhost:3000/api/modes/paint-by-number/start
+```
+
+The panel should now show every block at a **dimmed** version of its target colour — no numbers (that's a Phase 4 frontend concern; at 2-8px per block there's no room for a legible digit anyway).
+
+```bash
+# Look up a block's correct answer, then submit it (block 0's correct index, from the GET above)
+curl -X POST -H "Content-Type: application/json" -d '{"blockIndex":0,"paletteIndex":<correct index>}' http://localhost:3000/api/pbn/1/color
+# -> {"correct":true,...} and that block on the panel switches from the dim hint to the REAL photo pixels for that region
+
+# A wrong index is rejected and changes nothing
+curl -X POST -H "Content-Type: application/json" -d '{"blockIndex":1,"paletteIndex":<some other index>}' http://localhost:3000/api/pbn/1/color
+# -> {"correct":false} - panel unchanged, progress unchanged
+```
+
+**Restart proof:** color a few blocks, then Ctrl+C and restart the backend (terminal 2) without touching anything else. `curl http://localhost:3000/api/status` should show `mode.mode: "paint-by-number"` with the same `revealedCount` as before — colouring takes days in practice, so this persistence is the entire reason SQLite is in the stack for this mode.
+
+**Completing a session:** color every block correctly (`GET /api/pbn/1` returns `blockColors`, the full answer key, if you want to script this), then:
+```bash
+curl http://localhost:3000/api/pbn/1   # completed: true once every block is revealed
+curl -X POST http://localhost:3000/api/pbn/1/save
+# -> {"pixelArtImageId":..,"revealedImageId":..} - two new rows in /api/images with source:"paint-by-number":
+#    one is the flat block-colour "pixel art", the other is the full-res revealed photo. Both can go into a slideshow.
+```
 
 ## C++ renderer
 

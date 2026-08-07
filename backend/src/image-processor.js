@@ -1,7 +1,8 @@
 // Wraps the Python image scripts (scripts/process_image.py,
-// scripts/raw_to_png.py). This is the only file in the backend that knows
-// Python exists - Node never decodes, resizes, crops, or encodes an image
-// itself, it just spawns a script and passes file paths.
+// scripts/raw_to_png.py, scripts/pbn_analyze.py). This is the only file in
+// the backend that knows Python exists - Node never decodes, resizes,
+// crops, or encodes an image itself, it just spawns a script and passes
+// file paths.
 
 const { spawn } = require("child_process");
 const path = require("path");
@@ -10,6 +11,7 @@ const fs = require("fs");
 const SCRIPTS_DIR = path.join(__dirname, "..", "..", "scripts");
 const PROCESS_IMAGE_SCRIPT = path.join(SCRIPTS_DIR, "process_image.py");
 const RAW_TO_PNG_SCRIPT = path.join(SCRIPTS_DIR, "raw_to_png.py");
+const PBN_ANALYZE_SCRIPT = path.join(SCRIPTS_DIR, "pbn_analyze.py");
 const TIMEOUT_MS = 30000;
 const FRAME_BYTES = 128 * 128 * 3;
 
@@ -118,4 +120,21 @@ async function convertRawToPng(rawPath, pngPath) {
   return result;
 }
 
-module.exports = { processImage, convertRawToPng };
+// Runs pbn_analyze.py <inputPath> <difficulty> <outputJsonPath> - builds a
+// colour palette and per-block answers for paint-by-number mode. Returns
+// the parsed result directly from stdout (grid_width, grid_height, palette,
+// block_colors, full_res_path) rather than re-reading the JSON file the
+// script also writes - both contain the same data, and the script writes
+// the file because the CLI contract requires an output path, not because
+// Node needs to read it back.
+async function analyzePbn(inputPath, difficulty, outputJsonPath) {
+  const result = await runPythonScript([PBN_ANALYZE_SCRIPT, inputPath, difficulty, outputJsonPath]);
+
+  if (!fs.existsSync(result.full_res_path)) {
+    throw new Error(`Full-res file missing after analysis: ${result.full_res_path}`);
+  }
+
+  return result;
+}
+
+module.exports = { processImage, convertRawToPng, analyzePbn };

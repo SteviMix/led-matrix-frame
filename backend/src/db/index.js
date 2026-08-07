@@ -14,6 +14,7 @@ const DEFAULT_APP_STATE = {
   current_mode: "idle",
   active_playlist: "",
   slideshow_interval_seconds: "10",
+  active_pbn_session: "",
 };
 
 fs.mkdirSync(DB_DIR, { recursive: true });
