@@ -342,6 +342,46 @@ colouring takes days and losing days of progress to a power cut would defeat the
 
 ---
 
+## Phase 4 (in progress) — Angular frontend
+
+Branch `frontend/` hosts the Angular 21 app (standalone components, signals, SCSS,
+no SSR). Parts merged to `main` so far, each its own PR/branch:
+
+- **Part 0b (scaffold cleanup)** — empty `services/`/`models/` folders (tracked via
+  `.gitkeep`) and `environments/environment.ts` exporting `apiBaseUrl:
+  'http://ledframe.local:3000'`. Unused for now — HTTP calls go through the dev
+  proxy as relative paths instead (see Part 1); `environment.ts` will matter once
+  there's a production build with no dev server in front of it.
+- **Part 1 (status spike)** — first proven Angular -> backend connection:
+  `ApiService.getStatus()` (HttpClient, relative `/api/status`, no hardcoded host)
+  -> `App` component signal -> template. `models/status.ts` types the live
+  `/api/status` response; the paint-by-number-only fields (`sessionId`,
+  `gridWidth`, ...) are optional since idle/slideshow/draw omit them.
+  **Bug caught before merge:** `proxy.conf.json` existed from the original
+  scaffold but `angular.json`'s `serve` target never referenced it
+  (`options.proxyConfig` was missing) — `/api/status` would have 404'd against
+  the dev server itself instead of reaching the backend. Fixed by adding
+  `proxyConfig: "proxy.conf.json"` to the serve options.
+  **Dev-server binding note:** `ng serve` binds to `localhost` only by default,
+  so `http://ledframe.local:4200` is unreachable from a phone/laptop on the same
+  Wi-Fi unless it's started with `--host 0.0.0.0`. Needed for testing from a
+  second device, same reasoning as the `--host` flag documented for the backend.
+- **Part 2 (routing skeleton)** — five empty placeholder pages
+  (`pages/viewer|slideshow|draw|pbn|admin`, each rendering only its own name),
+  wired via lazy-loaded routes (`loadComponent`) in `app.routes.ts`: `/` is the
+  Viewer (safe default per the read-only-viewer definition below — no controls
+  on the landing page), `/slideshow`, `/draw`, `/pbn`, `/admin`, with a wildcard
+  `**` redirecting unknown URLs back to `/`. A plain nav strip added to the root
+  shell; Part 1's status display kept intact above it. Build output confirms a
+  genuinely separate lazy chunk per screen (real code-splitting, not eager
+  bundling).
+
+Not yet built: the actual read-only viewer content (Part 6, see definition
+below), or any of the feature screens (slideshow controls, draw canvas, pbn
+grid, admin) beyond their empty placeholders.
+
+---
+
 ## Remaining Roadmap (after Phase 2)
 
 - **Phase 3 — COMPLETE.** All three modes done: Slideshow (crop/pan, dithering, playlists), Live Draw (WebSocket canvas, delta pixel protocol), Paint-by-Number (K-means, block-reveal, dual-save — currently RGB, LAB is a documented one-line flag flip for later; see Future Improvements). The Read-only viewer (see definition below) is not built yet — planned for Phase 4, alongside the frontend.
@@ -374,7 +414,7 @@ in memory. It is one variable, and it is needed for both the viewer and for debu
 
 **When to build:** Phase 4, alongside the Angular frontend. Building an HTML page for it now
 would mean throwing that page away.
-- **Phase 4 — Angular frontend** connected to backend
+- **Phase 4 — Angular frontend** connected to backend (in progress, see "Phase 4" section above)
 - **Phase 5 — hostapd** offline AP setup + test from phone/laptop
 - **Phase 6 — Hardware** (when panels arrive): switch emulator -> real HUB75, resolve panel geometry (see note below), solve scan/multiplexing (try --led-multiplexing 0-17, focus Z-Stripe), calibration, shutdown button
 
