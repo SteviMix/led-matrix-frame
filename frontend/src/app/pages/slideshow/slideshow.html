@@ -1,1 +1,86 @@
 <h2>Slideshow</h2>
+
+@if (error(); as e) {
+  <p role="alert" class="error">{{ e }}</p>
+}
+@if (loading()) {
+  <p>Loading…</p>
+}
+
+<section>
+  <h3>Create playlist</h3>
+  <form (submit)="onCreateSubmit($event)">
+    <label for="new-playlist-name">Playlist name</label>
+    <input
+      id="new-playlist-name"
+      type="text"
+      [value]="newPlaylistName()"
+      (input)="newPlaylistName.set($any($event.target).value)"
+    />
+    <button type="submit">Create</button>
+  </form>
+</section>
+
+<section>
+  <h3>Playlists</h3>
+  @if (playlists().length === 0) {
+    <p>No playlists yet.</p>
+  }
+  <ul>
+    @for (playlist of playlists(); track playlist.id) {
+      <li>
+        <span>{{ playlist.name }} ({{ playlist.image_count ?? 0 }} images)</span>
+        <button type="button" (click)="selectPlaylist(playlist.id)">Open</button>
+        <button type="button" (click)="renamePlaylist(playlist.id, playlist.name)">Rename</button>
+        <button type="button" (click)="deletePlaylist(playlist.id)">Delete</button>
+      </li>
+    }
+  </ul>
+</section>
+
+@if (selectedPlaylist(); as playlist) {
+  <section>
+    <h3>{{ playlist.name }}</h3>
+    <button type="button" (click)="closeSelectedPlaylist()">Close</button>
+    @if (playlist.images.length === 0) {
+      <p>No images in this playlist.</p>
+    }
+    <ul>
+      @for (image of playlist.images; track image.id) {
+        <li>
+          <span>Image #{{ image.id }} ({{ image.source }})</span>
+          <button type="button" (click)="assignImage(image.id, null)">Unassign</button>
+        </li>
+      }
+    </ul>
+  </section>
+}
+
+<section>
+  <h3>Unassigned images</h3>
+  @if (unassignedImages().length === 0) {
+    <p>No unassigned images.</p>
+  }
+  <ul>
+    @for (image of unassignedImages(); track image.id) {
+      <li>
+        <span>Image #{{ image.id }} ({{ image.source }})</span>
+        <label>
+          Assign to
+          <select #assignSelect [disabled]="playlists().length === 0">
+            @for (playlist of playlists(); track playlist.id) {
+              <option [value]="playlist.id">{{ playlist.name }}</option>
+            }
+          </select>
+        </label>
+        <button
+          type="button"
+          [disabled]="playlists().length === 0"
+          (click)="assignImage(image.id, +assignSelect.value)"
+        >
+          Assign
+        </button>
+      </li>
+    }
+  </ul>
+</section>
