@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { Image, Playlist, PlaylistWithImages } from '../../models/playlist';
 import { ApiService } from '../../services/api';
@@ -19,10 +20,6 @@ export class Slideshow implements OnInit {
   protected readonly newPlaylistName = signal('');
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
-
-  protected readonly unassignedImages = computed(() =>
-    this.images().filter((image) => image.playlist_id === null)
-  );
 
   ngOnInit(): void {
     this.loadPlaylists();
@@ -133,19 +130,51 @@ export class Slideshow implements OnInit {
     });
   }
 
-  protected assignImage(imageId: number, playlistId: number | null): void {
+  protected linkImage(playlistId: number, imageId: number): void {
     this.error.set(null);
-    this.api.assignImage(imageId, playlistId).subscribe({
-      next: () => {
-        this.loadImages();
-        this.loadPlaylists(); // image_count lives on the playlists list, not the images list
-        const selected = this.selectedPlaylist();
-        if (selected) {
-          this.selectPlaylist(selected.id);
-        }
-      },
-      error: () => this.error.set('Failed to update image assignment.')
+    this.api.linkImage(playlistId, imageId).subscribe({
+      next: () => this.refreshAfterLinkChange(),
+      error: (err: HttpErrorResponse) => {
+        // 409 = already linked. Not a failure worth blocking on - the pair is
+        // already in the state the user wanted, so just note it and re-fetch
+        // to make sure the UI reflects the (already-correct) server state.
+        this.error.set(
+          err.status === 409
+            ? 'That image is already in that playlist.'
+            : 'Failed to link image to playlist.'
+        );
+        this.refreshAfterLinkChange();
+      }
     });
+  }
+
+  protected unlinkImage(playlistId: number, imageId: number): void {
+    this.error.set(null);
+    this.api.unlinkImage(playlistId, imageId).subscribe({
+      next: () => this.refreshAfterLinkChange(),
+      error: () => this.error.set('Failed to unlink image from playlist.')
+    });
+  }
+
+  // A given image can link to any playlist it is not already in.
+  protected availablePlaylistsFor(image: Image): Playlist[] {
+    return this.playlists().filter((playlist) => !image.playlist_ids.includes(playlist.id));
+  }
+
+  protected playlistName(id: number): string {
+    return this.playlists().find((playlist) => playlist.id === id)?.name ?? `#${id}`;
+  }
+
+  // Linking/unlinking can change image_count (on playlists) and playlist_ids
+  // (on images), plus the currently open playlist's membership - all three
+  // must be re-fetched from the server, never hand-edited locally.
+  private refreshAfterLinkChange(): void {
+    this.loadPlaylists();
+    this.loadImages();
+    const selected = this.selectedPlaylist();
+    if (selected) {
+      this.selectPlaylist(selected.id);
+    }
   }
 
   private isDuplicateName(name: string, excludeId?: number): boolean {

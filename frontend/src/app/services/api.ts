@@ -37,7 +37,14 @@ export class ApiService {
     return this.http.get<Image[]>('/api/images');
   }
 
-  assignImage(imageId: number, playlistId: number | null): Observable<Image> {
-    return this.http.patch<Image>(`/api/images/${imageId}`, { playlistId });
+  linkImage(playlistId: number, imageId: number): Observable<{ playlistId: number; imageId: number }> {
+    return this.http.post<{ playlistId: number; imageId: number }>(
+      `/api/playlists/${playlistId}/images`,
+      { imageId }
+    );
+  }
+
+  unlinkImage(playlistId: number, imageId: number): Observable<{ unlinked: boolean }> {
+    return this.http.delete<{ unlinked: boolean }>(`/api/playlists/${playlistId}/images/${imageId}`);
   }
 }
