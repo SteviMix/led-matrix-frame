@@ -32,6 +32,32 @@ const upload = multer({
   },
 });
 
+// Attaches playlist_ids (all playlists an image currently belongs to) onto
+// image rows, in one query rather than one-per-image. Used by every route
+// that returns image rows, now that playlist membership is not a column on
+// images itself.
+function attachPlaylistIds(db, images) {
+  if (images.length === 0) return images;
+
+  const placeholders = images.map(() => "?").join(",");
+  const links = db
+    .prepare(`SELECT image_id, playlist_id FROM playlist_images WHERE image_id IN (${placeholders})`)
+    .all(...images.map((image) => image.id));
+
+  const idsByImageId = new Map();
+  for (const link of links) {
+    if (!idsByImageId.has(link.image_id)) {
+      idsByImageId.set(link.image_id, []);
+    }
+    idsByImageId.get(link.image_id).push(link.playlist_id);
+  }
+
+  return images.map((image) => ({
+    ...image,
+    playlist_ids: idsByImageId.get(image.id) || [],
+  }));
+}
+
 function isValidCropRect(body) {
   const { cropX, cropY, cropW, cropH } = body;
   return (
@@ -81,53 +107,21 @@ function createImagesRouter({ rendererClient }) {
         .run(originalPath, processedPath);
 
       const row = db.prepare("SELECT * FROM images WHERE id = ?").get(result.lastInsertRowid);
-      res.status(201).json(row);
+      res.status(201).json(attachPlaylistIds(db, [row])[0]);
     });
   });
 
   router.get("/", (req, res) => {
     const rows = db.prepare("SELECT * FROM images ORDER BY id").all();
-    res.json(rows);
+    res.json(attachPlaylistIds(db, rows));
   });
 
-  // Assigns an image to a playlist (or unassigns with playlistId: null) and/or
-  // changes its sort_order.
-  router.patch("/:id", (req, res) => {
-    const row = db.prepare("SELECT * FROM images WHERE id = ?").get(req.params.id);
-    if (!row) {
-      res.status(404).json({ error: "Image not found." });
-      return;
-    }
-
-    const { playlistId, sortOrder } = req.body || {};
-
-    if (playlistId !== undefined && playlistId !== null) {
-      const playlist = db.prepare("SELECT id FROM playlists WHERE id = ?").get(playlistId);
-      if (!playlist) {
-        res.status(404).json({ error: "Playlist not found." });
-        return;
-      }
-    }
-
-    const updates = [];
-    const values = [];
-    if (playlistId !== undefined) {
-      updates.push("playlist_id = ?");
-      values.push(playlistId);
-    }
-    if (sortOrder !== undefined) {
-      updates.push("sort_order = ?");
-      values.push(sortOrder);
-    }
-    if (updates.length === 0) {
-      res.status(400).json({ error: "Nothing to update. Provide playlistId and/or sortOrder." });
-      return;
-    }
-
-    values.push(row.id);
-    db.prepare(`UPDATE images SET ${updates.join(", ")} WHERE id = ?`).run(...values);
-    res.json(db.prepare("SELECT * FROM images WHERE id = ?").get(row.id));
-  });
+  // No PATCH /:id here: playlist membership moved to
+  // POST/DELETE /api/playlists/:id/images (see routes/playlists.js), and
+  // per-playlist ordering moved to playlist_images.sort_order. Cropping has
+  // its own endpoint below. That leaves no field left for a generic PATCH to
+  // update, so there is no route here rather than a handler that can only
+  // ever 400.
 
   // Re-processes the ORIGINAL file with a new crop rectangle, overwriting
   // processed_path. original_path is never touched, which is the whole
