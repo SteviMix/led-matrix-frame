@@ -49,7 +49,7 @@
       @for (image of playlist.images; track image.id) {
         <li>
           <span>Image #{{ image.id }} ({{ image.source }})</span>
-          <button type="button" (click)="assignImage(image.id, null)">Unassign</button>
+          <button type="button" (click)="unlinkImage(playlist.id, image.id)">Unlink</button>
         </li>
       }
     </ul>
@@ -57,29 +57,40 @@
 }
 
 <section>
-  <h3>Unassigned images</h3>
-  @if (unassignedImages().length === 0) {
-    <p>No unassigned images.</p>
+  <h3>All images</h3>
+  @if (images().length === 0) {
+    <p>No images yet.</p>
   }
   <ul>
-    @for (image of unassignedImages(); track image.id) {
+    @for (image of images(); track image.id) {
       <li>
         <span>Image #{{ image.id }} ({{ image.source }})</span>
-        <label>
-          Assign to
-          <select #assignSelect [disabled]="playlists().length === 0">
-            @for (playlist of playlists(); track playlist.id) {
-              <option [value]="playlist.id">{{ playlist.name }}</option>
+
+        @if (image.playlist_ids.length === 0) {
+          <span>In no playlist</span>
+        } @else {
+          <span>
+            In:
+            @for (playlistId of image.playlist_ids; track playlistId) {
+              <span>
+                {{ playlistName(playlistId) }}
+                <button type="button" (click)="unlinkImage(playlistId, image.id)">Unlink</button>
+              </span>
             }
-          </select>
-        </label>
-        <button
-          type="button"
-          [disabled]="playlists().length === 0"
-          (click)="assignImage(image.id, +assignSelect.value)"
-        >
-          Assign
-        </button>
+          </span>
+        }
+
+        @if (availablePlaylistsFor(image).length > 0) {
+          <label>
+            Add to
+            <select #linkSelect>
+              @for (playlist of availablePlaylistsFor(image); track playlist.id) {
+                <option [value]="playlist.id">{{ playlist.name }}</option>
+              }
+            </select>
+          </label>
+          <button type="button" (click)="linkImage(+linkSelect.value, image.id)">Link</button>
+        }
       </li>
     }
   </ul>
