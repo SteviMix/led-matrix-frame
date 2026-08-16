@@ -32,8 +32,17 @@ function createSlideshowMode({ db, rendererClient }) {
   function getPlaylistImages() {
     const playlistId = getActivePlaylistId();
     if (playlistId === null) return [];
+    // images.playlist_id no longer exists (many-to-many via playlist_images
+    // now) - order is per-playlist, so it must come from the join table's
+    // sort_order, not any column on images itself.
     return db
-      .prepare("SELECT * FROM images WHERE playlist_id = ? ORDER BY sort_order, id")
+      .prepare(
+        `SELECT i.*
+         FROM images i
+         JOIN playlist_images pi ON pi.image_id = i.id
+         WHERE pi.playlist_id = ?
+         ORDER BY pi.sort_order, i.id`
+      )
       .all(playlistId);
   }
 
