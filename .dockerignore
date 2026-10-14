@@ -1,0 +1,12 @@
+# Version control and docs are not needed in the images
+.git
+docs
+
+# Dependencies are installed inside the image, for Linux
+**/node_modules
+
+# Frontend is not part of these images yet
+frontend
+
+# The database lives in a volume, not in the image
+backend/db/*.db

@@ -1,0 +1,27 @@
+services:
+  renderer:
+    build:
+      context: .
+      dockerfile: renderer/Dockerfile
+    ports:
+      - "8888:8888"       # browser view of the matrix
+    volumes:
+      - socket:/tmp       # renderer creates /tmp/ledframe.sock here
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "3000:3000"       # REST API and WebSocket
+    volumes:
+      - socket:/tmp       # same volume, so the backend sees the renderer's socket
+      - db:/app/backend/db
+      - images:/app/images
+    depends_on:
+      - renderer
+
+volumes:
+  socket:
+  db:
+  images:
