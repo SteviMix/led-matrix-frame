@@ -1,3 +1,5 @@
+[![Docker build](https://github.com/SteviMix/led-matrix-frame/actions/workflows/main.yml/badge.svg)](https://github.com/SteviMix/led-matrix-frame/actions/workflows/main.yml)
+
 # LED Matrix Digital Frame
 
 A custom digital photo frame built on Raspberry Pi, driving HUB75 LED matrix panels. Designed as a gift, it runs fully offline as a local Wi-Fi access point and offers three interactive modes controlled from any phone or laptop on the network.
