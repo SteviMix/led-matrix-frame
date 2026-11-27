@@ -1,8 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 
-import { Status } from './models/status';
-import { ApiService } from './services/api';
+import { StatusService } from './services/status';
 
 @Component({
   selector: 'app-root',
@@ -12,15 +11,13 @@ import { ApiService } from './services/api';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class App implements OnInit {
-  private api = inject(ApiService);
+  private statusService = inject(StatusService);
 
   protected readonly title = signal('frontend');
-  protected readonly status = signal<Status | null>(null);
+  // Shared with every other component via StatusService - not a private copy.
+  protected readonly status = this.statusService.status;
 
   ngOnInit(): void {
-    this.api.getStatus().subscribe({
-      next: (value) => this.status.set(value),
-      error: (err) => console.error('status fetch failed', err)
-    });
+    this.statusService.refresh();
   }
 }
