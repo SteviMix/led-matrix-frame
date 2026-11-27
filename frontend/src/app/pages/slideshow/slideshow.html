@@ -3,9 +3,49 @@
 @if (error(); as e) {
   <p role="alert" class="error">{{ e }}</p>
 }
+@if (statusError(); as e) {
+  <p role="alert" class="error">{{ e }}</p>
+}
 @if (loading()) {
   <p>Loading…</p>
 }
+
+<section aria-labelledby="now-playing-heading">
+  <h3 id="now-playing-heading">Now playing</h3>
+  @if (slideshow(); as state) {
+    <p aria-live="polite">
+      <strong>{{ activePlaylistName() }}</strong>
+      @if (position(); as pos) {
+        — image {{ pos.current }} of {{ pos.total }}
+      } @else {
+        — playlist is empty, waiting for images
+      }
+    </p>
+    <div class="controls">
+      <button type="button" (click)="previousSlide()">Previous</button>
+      <button type="button" (click)="nextSlide()">Next</button>
+      <button type="button" (click)="stopSlideshow()">Stop</button>
+    </div>
+    <p>Interval: {{ state.intervalSeconds }} s</p>
+  } @else {
+    <p>No slideshow running (current mode: {{ currentModeName() ?? 'unknown' }}).</p>
+  }
+  <button type="button" (click)="refreshStatus()">Refresh status</button>
+
+  <form (submit)="onIntervalSubmit($event)">
+    <label for="interval-seconds">Interval (seconds)</label>
+    <input
+      id="interval-seconds"
+      type="number"
+      min="0.1"
+      step="any"
+      [value]="intervalInput()"
+      (input)="intervalInput.set($any($event.target).value)"
+    />
+    <button type="submit">Set interval</button>
+  </form>
+  <p class="hint">A new interval takes effect from the next image.</p>
+</section>
 
 <section>
   <h3>Create playlist</h3>
@@ -30,6 +70,10 @@
     @for (playlist of playlists(); track playlist.id) {
       <li>
         <span>{{ playlist.name }} ({{ playlist.image_count ?? 0 }} images)</span>
+        @if (slideshow()?.playlistId === playlist.id) {
+          <span class="playing">Playing</span>
+        }
+        <button type="button" (click)="playPlaylist(playlist.id)">Play</button>
         <button type="button" (click)="selectPlaylist(playlist.id)">Open</button>
         <button type="button" (click)="renamePlaylist(playlist.id, playlist.name)">Rename</button>
         <button type="button" (click)="deletePlaylist(playlist.id)">Delete</button>
