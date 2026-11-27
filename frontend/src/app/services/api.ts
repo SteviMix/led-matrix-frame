@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { Image, Playlist, PlaylistWithImages } from '../models/playlist';
-import { Status } from '../models/status';
+import { Status, StatusMode } from '../models/status';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -46,5 +46,31 @@ export class ApiService {
 
   unlinkImage(playlistId: number, imageId: number): Observable<{ unlinked: boolean }> {
     return this.http.delete<{ unlinked: boolean }>(`/api/playlists/${playlistId}/images/${imageId}`);
+  }
+
+  // Slideshow mode control. start/stop/next/previous respond with the new
+  // mode state, but callers should re-fetch via StatusService.refresh()
+  // instead of using it, so status keeps a single write path.
+  startSlideshow(playlistId: number): Observable<StatusMode> {
+    return this.http.post<StatusMode>('/api/modes/slideshow/start', { playlistId });
+  }
+
+  stopSlideshow(): Observable<StatusMode> {
+    return this.http.post<StatusMode>('/api/modes/slideshow/stop', {});
+  }
+
+  nextSlide(): Observable<StatusMode> {
+    return this.http.post<StatusMode>('/api/modes/slideshow/next', {});
+  }
+
+  previousSlide(): Observable<StatusMode> {
+    return this.http.post<StatusMode>('/api/modes/slideshow/previous', {});
+  }
+
+  // Backend requires a JSON number > 0 - a numeric string like "10" is rejected.
+  updateSlideshowSettings(intervalSeconds: number): Observable<{ intervalSeconds: number }> {
+    return this.http.patch<{ intervalSeconds: number }>('/api/modes/slideshow/settings', {
+      intervalSeconds
+    });
   }
 }
