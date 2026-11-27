@@ -12,7 +12,10 @@ const DEFAULT_INTERVAL_SECONDS = 10;
 
 function createSlideshowMode({ db, rendererClient }) {
   let timer = null;
-  let currentIndex = 0;
+  // Index of the image currently on the panel, or null if none has been shown
+  // yet. Every path (timer tick, next, previous) moves it first, then shows
+  // the image at the new index - it never means "the one to show next".
+  let currentIndex = null;
   let warnedEmptyPlaylist = false;
 
   function getActivePlaylistId() {
@@ -82,6 +85,16 @@ function createSlideshowMode({ db, rendererClient }) {
     timer = setTimeout(tick, getIntervalMs());
   }
 
+  // Moves currentIndex by `delta` (wrapping in both directions) and shows the
+  // image there. The first step after start always lands on image 0. The
+  // double modulo keeps the result in range for negative deltas and for a
+  // playlist that shrank since the last step.
+  function step(images, delta) {
+    const n = images.length;
+    currentIndex = currentIndex === null ? 0 : (((currentIndex + delta) % n) + n) % n;
+    sendImage(images[currentIndex]);
+  }
+
   function tick() {
     const images = getPlaylistImages();
 
@@ -95,15 +108,13 @@ function createSlideshowMode({ db, rendererClient }) {
     }
     warnedEmptyPlaylist = false;
 
-    if (currentIndex >= images.length) currentIndex = 0;
-    sendImage(images[currentIndex]);
-    currentIndex = (currentIndex + 1) % images.length;
+    step(images, 1);
     scheduleNext();
   }
 
   function start() {
     stop(); // idempotent: clear any existing timer before starting fresh
-    currentIndex = 0;
+    currentIndex = null;
     tick(); // show the first image immediately, then keep advancing on the timer
   }
 
@@ -114,22 +125,22 @@ function createSlideshowMode({ db, rendererClient }) {
     }
   }
 
-  function next() {
+  // Manual navigation: step once, then restart the timer so the new image
+  // gets a full interval on screen instead of whatever was left of the old one.
+  function manualStep(delta) {
     const images = getPlaylistImages();
     if (images.length === 0) return;
-    currentIndex = (currentIndex + 1) % images.length;
-    sendImage(images[currentIndex]);
+    step(images, delta);
     stop();
     scheduleNext();
   }
 
+  function next() {
+    manualStep(1);
+  }
+
   function previous() {
-    const images = getPlaylistImages();
-    if (images.length === 0) return;
-    currentIndex = (currentIndex - 1 + images.length) % images.length;
-    sendImage(images[currentIndex]);
-    stop();
-    scheduleNext();
+    manualStep(-1);
   }
 
   function getState() {
