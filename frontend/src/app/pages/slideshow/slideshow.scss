@@ -14,3 +14,18 @@ li {
 .error {
   color: #b00020;
 }
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-block-end: 0.5rem;
+}
+
+.playing {
+  font-weight: bold;
+}
+
+.hint {
+  color: #555;
+  font-size: 0.875rem;
+}
